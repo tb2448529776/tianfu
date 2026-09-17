@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧭 天赋罗盘 · 发现你的天赋密码</title>
+<!--
+  ══════════════════════════════════════════════════════════════
+  天赋罗盘 · 优化版 V3（单文件离线应用）
+  ══════════════════════════════════════════════════════════════
+  本版核心机制：
+  1. 大题库随机组卷：120 道量表题（每维度 12 题，题型=情境判断+行为频率）
+     + 25 组「思维对决」二选一。每次测评每篇章随机抽 3 道量表题 + 1 组对决
+     （共 16+4=20 题），组卷组合超过 10^21 种，两人同卷几乎不可能。
+  2. 思维对决 = 强迫选择范式（forced-choice，参照盖洛普优势识别器）：
+     两个选项同样有吸引力，无法伪装「好答案」，选择暴露真实偏好。
+  3. 心理学依据：每维度映射具名构念（发散思维/认知需求/共情 IRI/情绪粒度/
+     心理旋转 MRT 等），报告中展示，并诚实注明多元智能理论的争议。
+  4. 计分：量表题 v∈{1..4} 归一化为 (v-1)/3；对决题胜方 1.0、负方 0.5。
+     维度得分 = 该维度所有作答项均值 × 100。结论全数据驱动，无写死分数。
+  5. 一机一次：完成测评后本设备自动锁定（报告仍可随时查看）。
+     管理员解锁：网址后加 ?admin=密码（密码在下方 CONFIG.adminPasscode 修改），
+     打开一次即在本设备激活管理员模式，可无限次重新测评。
+     ※ 诚实提示：此限制基于浏览器本地存储，用户清除浏览器数据可重置；
+       如需绝对防刷需在服务端记录，此处为无服务器条件下的最优方案。
+  6. 存储键为 talent_compass_v3（与旧版隔离，避免旧会话混入新题库）。
+
+  部署：整份文件粘贴/上传到你的工作台平台即可。
+  调试：网址加 ?auto=1 自动随机作答并直接出报告（仅站长自测用）。
+  ══════════════════════════════════════════════════════════════
+-->
+<style>
+  :root{
+    --bg:#f4f5fb; --card:#ffffff; --ink:#1f2330; --ink-soft:#5a6072;
+    --brand:#5b5bd6; --brand-deep:#4646c8; --brand-soft:#eeefff;
+    --accent:#f59e0b; --good:#10b981; --mid:#3b82f6; --low:#94a3b8;
+    --warn:#ef4444; --radius:16px; --shadow:0 6px 24px rgba(31,35,48,.07);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.6;min-height:100vh}
+  .wrap{max-width:720px;margin:0 auto;padding:18px 16px 60px}
+
+  header{background:linear-gradient(135deg,#5b5bd6 0%,#8b5cf6 60%,#d946ef 120%);color:#fff;
+         border-radius:var(--radius);padding:26px 22px;margin-bottom:14px;box-shadow:var(--shadow)}
+  header h1{font-size:24px;letter-spacing:.5px}
+  header p{opacity:.92;font-size:14px;margin-top:6px}
+  .offline-tag{display:inline-block;margin-top:12px;font-size:12px;background:rgba(255,255,255,.18);
+               padding:4px 10px;border-radius:99px}
+
+  nav{display:flex;gap:8px;margin-bottom:14px}
+  nav button{flex:1;padding:11px 0;border:1.5px solid transparent;background:var(--card);color:var(--ink-soft);
+             border-radius:12px;font-size:14px;cursor:pointer;font-weight:600;box-shadow:var(--shadow);transition:.15s}
+  nav button.active{background:var(--brand);color:#fff;box-shadow:none}
+  nav button:disabled{opacity:.45;cursor:not-allowed}
+
+  .card{background:var(--card);border-radius:var(--radius);padding:22px 20px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .hidden{display:none!important}
+
+  .hero-mini{font-size:15px;color:var(--ink-soft);margin-bottom:16px}
+  .feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+  .feature{background:var(--brand-soft);border-radius:12px;padding:14px}
+  .feature b{display:block;font-size:14px;margin-bottom:3px}
+  .feature span{font-size:12.5px;color:var(--ink-soft)}
+  .btn{display:block;width:100%;padding:14px 0;text-align:center;border:none;border-radius:14px;
+       font-size:16px;font-weight:700;cursor:pointer;transition:.15s;margin-top:10px}
+  .btn-primary{background:linear-gradient(135deg,var(--brand),#8b5cf6);color:#fff}
+  .btn-primary:hover{filter:brightness(1.06)}
+  .btn-ghost{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}
+  .btn-ghost:hover{background:var(--brand-soft)}
+  .btn-danger{background:#fff;color:var(--warn);border:1.5px solid var(--warn)}
+  .btn-danger:hover{background:#fef2f2}
+
+  .lock-box{text-align:center;padding:10px 0}
+  .lock-box .big{font-size:40px;margin-bottom:6px}
+  .admin-bar{border:2px dashed var(--accent);background:#fffbeb}
+  .admin-bar h3{color:#b45309}
+  .admin-actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+  .admin-actions button{flex:1;min-width:140px;padding:11px 0;border-radius:11px;font-weight:700;
+                        cursor:pointer;font-size:14px;border:none}
+  .admin-go{background:linear-gradient(135deg,var(--accent),#f97316);color:#fff}
+  .admin-off{background:#f0f1f7;color:var(--ink-soft)}
+
+  .progress-line{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px}
+  .progress-track{height:8px;background:#e8e9f3;border-radius:99px;overflow:hidden;margin-bottom:14px}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--brand),#8b5cf6);border-radius:99px;transition:width .3s}
+  .section-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);color:var(--brand-deep);
+                font-size:12.5px;font-weight:700;padding:5px 12px;border-radius:99px;margin-bottom:12px}
+  .section-chip.duel-chip{background:#fff4e0;color:#b45309}
+  .q-text{font-size:19px;font-weight:700;line-height:1.55;margin-bottom:18px;min-height:58px}
+  .option{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1.5px solid #e4e5f0;border-radius:12px;
+          margin-bottom:10px;cursor:pointer;transition:.13s;background:#fff;font-size:15px}
+  .option:hover{border-color:var(--brand);background:var(--brand-soft)}
+  .option.selected{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 0 0 3px rgba(91,91,214,.13)}
+  .option-letter{flex:none;width:28px;height:28px;border-radius:8px;background:#eef0fa;color:var(--ink-soft);
+                 display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+  .option.selected .option-letter{background:var(--brand);color:#fff}
+  .quiz-nav{display:flex;gap:10px;margin-top:16px}
+  .quiz-nav button{flex:1;padding:12px 0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:none}
+  #prevBtn{background:#f0f1f7;color:var(--ink-soft)}
+  #prevBtn:disabled{opacity:.4;cursor:not-allowed}
+  #nextBtn{background:linear-gradient(135deg,var(--brand),#8b5cf6);color:#fff}
+  #nextBtn:disabled{opacity:.4;cursor:not-allowed}
+  .quiz-tip{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:10px}
+  .dots{display:flex;gap:5px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  .dots i{width:7px;height:7px;border-radius:99px;background:#dfe0ee;transition:.2s}
+  .dots i.done{background:var(--brand)}
+  .dots i.now{background:var(--accent);transform:scale(1.35)}
+  .dots i.duel{width:11px;height:11px;background:#fde8c8}
+  .dots i.duel.done{background:var(--accent)}
+  .dots i.duel.now{transform:scale(1.4)}
+
+  .duel-note{font-size:13px;color:#b45309;background:#fff7ec;border-radius:10px;padding:8px 12px;margin-bottom:14px}
+  .duel-wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .duel-opt{border:2px solid #f0dfc0;background:#fffdf8;border-radius:14px;padding:18px 14px;text-align:center;
+            cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:8px;align-items:center;min-height:150px;justify-content:center}
+  .duel-opt:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 20px rgba(245,158,11,.15)}
+  .duel-opt.selected{border-color:var(--accent);background:#fff7ec;box-shadow:0 0 0 3px rgba(245,158,11,.2)}
+  .duel-badge{flex:none;width:30px;height:30px;border-radius:10px;background:#fde8c8;color:#b45309;
+              display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+  .duel-opt.selected .duel-badge{background:var(--accent);color:#fff}
+  .duel-t{font-size:14.5px;font-weight:700;line-height:1.55}
+  @media (max-width:420px){ .duel-wrap{grid-template-columns:1fr 1fr;gap:8px} .duel-opt{padding:14px 8px;min-height:140px} .duel-t{font-size:13px} }
+
+  #toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%) translateY(20px);
+         background:rgba(31,35,48,.92);color:#fff;padding:9px 18px;border-radius:99px;font-size:13.5px;
+         opacity:0;pointer-events:none;transition:.25s;z-index:99;white-space:nowrap}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .done-box{text-align:center;padding:40px 20px}
+  .done-box .big{font-size:44px;animation:pop .5s}
+  @keyframes pop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+  .spinner{width:34px;height:34px;border:3.5px solid var(--brand-soft);border-top-color:var(--brand);
+           border-radius:50%;margin:16px auto 0;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .rep-overview{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+  .type-badge{display:inline-flex;align-items:center;gap:8px;font-size:20px;font-weight:800;
+              padding:10px 20px;border-radius:99px;color:#fff;background:linear-gradient(135deg,var(--brand),#8b5cf6)}
+  .match-line{font-size:13.5px;color:var(--ink-soft)}
+  .rep-summary{font-size:15px;font-weight:600}
+  .rep-meta{font-size:12.5px;color:var(--ink-soft);background:var(--bg);padding:7px 12px;border-radius:9px}
+  h3.sec-title{font-size:17px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .dim-row{display:grid;grid-template-columns:76px 1fr 34px 74px;align-items:center;gap:8px;margin-bottom:9px;font-size:13.5px}
+  .dim-bar-wrap{height:10px;background:#eef0f8;border-radius:99px;overflow:hidden}
+  .dim-bar{height:100%;border-radius:99px;transition:width .6s}
+  .dim-score{font-weight:800;text-align:right}
+  .lv{font-size:11.5px;font-weight:700;padding:2.5px 8px;border-radius:99px;text-align:center}
+  .lv-high{background:#fef3c7;color:#b45309}.lv-good{background:#d1fae5;color:#047857}
+  .lv-mid{background:#dbeafe;color:#1d4ed8}.lv-low{background:#e2e8f0;color:#64748b}
+  .insight{font-size:13.5px;color:var(--ink-soft);background:var(--bg);border-radius:10px;padding:11px 14px;margin-top:6px}
+  .core-box{border:2px solid var(--brand-soft);border-radius:14px;padding:18px}
+  .core-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .core-head h4{font-size:17px}
+  .psych-line{font-size:12.5px;color:var(--brand-deep);background:var(--brand-soft);border-radius:8px;
+              padding:6px 10px;margin-top:10px;display:inline-block}
+  .combo-chips{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .combo-chip{background:var(--brand-soft);color:var(--brand-deep);font-weight:700;font-size:13px;
+              padding:5px 12px;border-radius:99px}
+  .blind-item{border-left:3px solid var(--low);padding:2px 0 2px 12px;margin-bottom:14px}
+  .blind-head{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700;margin-bottom:4px}
+  .career-item{border:1.5px solid #e8e9f4;border-radius:13px;padding:15px;margin-bottom:11px}
+  .career-header{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .career-rank{width:24px;height:24px;flex:none;border-radius:8px;background:var(--brand);color:#fff;
+               display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+  .career-name{font-weight:800;font-size:15px;flex:1}
+  .stars{color:var(--accent);font-size:13px;letter-spacing:1px}
+  .career-why{font-size:13px;color:var(--brand-deep);background:var(--brand-soft);border-radius:8px;
+              padding:6px 10px;margin:9px 0;display:inline-block}
+  .career-detail{font-size:13.5px;color:var(--ink-soft)}
+  .plan-day{display:flex;gap:12px;margin-bottom:11px}
+  .day-badge{flex:none;width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--brand),#8b5cf6);
+             color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:15px;font-weight:800;line-height:1.05}
+  .day-badge small{font-size:9px;font-weight:600}
+  .plan-content p{font-size:14px}
+  .action-list{list-style:none}
+  .action-list li{display:flex;gap:10px;font-size:14.5px;margin-bottom:10px;align-items:flex-start}
+  .action-check{flex:none;width:19px;height:19px;border:2px solid var(--brand);border-radius:6px;margin-top:3px}
+  details.basis{background:var(--bg);border-radius:12px;padding:14px 16px;margin-top:4px}
+  details.basis summary{cursor:pointer;font-weight:700;font-size:14.5px;color:var(--ink-soft)}
+  .basis-dim{margin-top:13px;border-top:1px dashed #d6d8e5;padding-top:11px}
+  .basis-dim-head{font-size:13.5px;font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
+  .basis-q{font-size:13px;color:var(--ink);margin-bottom:3px}
+  .basis-a{font-size:12.5px;color:var(--ink-soft);padding-left:12px}
+  .basis-a b{color:var(--brand-deep)}
+  .basis-method{font-size:13px;color:var(--ink-soft);margin-top:10px;line-height:1.75}
+  .tag{display:inline-block;background:var(--brand-soft);color:var(--brand-deep);font-size:12.5px;
+       font-weight:700;padding:4px 11px;border-radius:99px;margin:0 6px 6px 0}
+  .muted{color:var(--ink-soft);font-size:13.5px}
+  .disclaimer{font-size:12.5px;color:var(--ink-soft);background:var(--bg);border-radius:11px;padding:12px 14px;line-height:1.75}
+
+  .data-row{display:flex;gap:8px;flex-wrap:wrap}
+  .data-row button{flex:1;min-width:120px;padding:10px 0;border-radius:11px;border:1.5px solid #dfe0ec;
+                   background:#fff;color:var(--ink-soft);font-size:13px;font-weight:600;cursor:pointer}
+  .data-row button:hover{border-color:var(--brand);color:var(--brand)}
+
+  .gate-input{width:100%;padding:14px;border:2px solid #dfe0ec;border-radius:12px;font-size:17px;
+              text-align:center;letter-spacing:2px;margin:14px 0;outline:none}
+  .gate-input:focus{border-color:var(--brand)}
+  .gate-err{color:var(--warn);font-size:13px;text-align:center;min-height:20px}
+
+  @media (max-width:420px){
+    .dim-row{grid-template-columns:66px 1fr 30px 66px;font-size:12.5px}
+    .q-text{font-size:17.5px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>🧭 天赋罗盘</h1>
+    <p>5 个篇章 · 16 道随机量表题 + 4 组思维对决 · 10 维天赋画像</p>
+    <span class="offline-tag">🔒 离线模式 · 数据仅存本地浏览器 · 一机一次</span>
+  </header>
+
+  <div id="gateView" class="card hidden">
+    <h3 class="sec-title">🔑 输入激活码</h3>
+    <p class="muted">请输入专属激活码进入天赋测评（每个激活码可用 2 次，由邀请方提供）。</p>
+    <input id="codeInput" class="gate-input" placeholder="请输入激活码" maxlength="20">
+    <div id="gateErr" class="gate-err"></div>
+    <button class="btn btn-primary" onclick="tryActivate()">激活进入</button>
+  </div>
+
+  <nav id="mainNav" class="hidden">
+    <button id="tabHome" onclick="switchTab('home')">首页</button>
+    <button id="tabQuiz" onclick="switchTab('quiz')">开始测评</button>
+    <button id="tabReport" onclick="switchTab('report')">我的报告</button>
+  </nav>
+
+  <div id="homeView" class="hidden">
+    <!-- 管理员模式提示条 -->
+    <div id="adminBar" class="card admin-bar hidden">
+      <h3 class="sec-title">👤 管理员模式已激活</h3>
+      <p class="muted">当前设备不受「一机一次」限制，可无限次重新测评。此状态仅对本浏览器生效。</p>
+      <div class="admin-actions">
+        <button class="admin-go" onclick="confirmRetake()">🔓 解除限制 · 重新测评</button>
+        <button class="admin-off" onclick="toggleAdmin(false)">退出管理员模式</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="hero-mini">这不是一场考试——没有好坏答案，只需凭<b>第一直觉</b>选择最像你的选项。约 3 分钟，20 题。</p>
+      <div class="feature-grid">
+        <div class="feature"><b>🎲 随机组卷</b><span>120 题大题库随机抽取，每人一份独家卷子</span></div>
+        <div class="feature"><b>⚔️ 思维对决</b><span>二选一强迫选择，模仿盖洛普防伪装设计</span></div>
+        <div class="feature"><b>🧠 心理学依据</b><span>每维对应具名心理学构念，来源透明</span></div>
+        <div class="feature"><b>🔒 一机一次</b><span>每台设备限测一次，结果真实不被稀释</span></div>
+      </div>
+      <p class="muted" style="margin-bottom:6px">本题库共 <b>120 道量表题 + 25 组思维对决</b>，每次随机抽取 16 题 + 4 组对决，组卷组合超过 10<sup>21</sup> 种——你拿到的那份，几乎不可能与任何人重复。</p>
+      <button id="startBtn" class="btn btn-primary" onclick="startQuiz()">🚀 开始天赋测评（约 3 分钟）</button>
+      <button id="resumeBtn" class="btn btn-ghost hidden" onclick="startQuiz()">▶️ 继续上次答题</button>
+      <button id="retakeBtn" class="btn btn-ghost hidden" onclick="confirmRetake()">🔄 重新测评（覆盖上次结果）</button>
+    </div>
+
+    <div id="lockBox" class="card hidden">
+      <div class="lock-box">
+        <div class="big">🔒</div>
+        <h3>本设备已完成测评</h3>
+        <p class="muted" style="margin-top:6px">为保证结果的严肃性，每台设备仅可测评一次。你的报告永久保存在本设备，可随时回看。<br>如确需重新测评，请联系邀请你的站长（管理员可远程为你解锁）。</p>
+        <button class="btn btn-ghost" style="margin-top:16px" onclick="switchTab('report')">📊 查看我的天赋报告</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="sec-title">🔒 隐私保护承诺</h3>
+      <p class="muted">数据仅存本地浏览器，绝不上传服务器；无需手机号与姓名，匿名测评；结果仅你可见，随时可导出备份或彻底清空。</p>
+    </div>
+  </div>
+
+  <div id="quizView" class="hidden">
+    <div class="card">
+      <div class="progress-line"><span id="progressLabel">第 1 题 / 共 20 题</span><span id="progressLeft"></span></div>
+      <div class="progress-track"><div id="progressFill" class="progress-fill" style="width:0%"></div></div>
+      <div class="dots" id="dots"></div>
+      <div class="section-chip" id="sectionChip">第一部分 · 思维引擎</div>
+      <div class="q-text" id="questionText">加载中…</div>
+      <div id="optionsContainer"></div>
+      <div class="quiz-nav">
+        <button id="prevBtn" onclick="prevQuestion()">⬅️ 上一题</button>
+        <button id="nextBtn" onclick="nextQuestion()">下一题 ➡️</button>
+      </div>
+      <p class="quiz-tip">凭第一直觉选择 · 支持键盘 1-4 / A-D 作答</p>
+    </div>
+  </div>
+
+  <div id="doneView" class="card hidden">
+    <div class="done-box">
+      <div class="big">🎉</div>
+      <h3>测评完成！</h3>
+      <p class="muted">正在为你生成专属天赋报告…</p>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div id="reportView" class="hidden">
+    <div id="noReport" class="card">
+      <div class="done-box">
+        <div class="big">📋</div>
+        <h3>还没有测评报告</h3>
+        <p class="muted">完成 20 道题目后，这里会生成你的天赋报告。</p>
+        <button class="btn btn-primary" style="margin-top:16px" onclick="startQuiz()">开始测评</button>
+      </div>
+    </div>
+
+    <div id="reportContent" class="hidden">
+      <div class="card">
+        <h3 class="sec-title">🌟 你的天赋类型</h3>
+        <div class="rep-overview" id="repOverview"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">📊 十维天赋画像</h3>
+        <div id="dimTable"></div>
+        <div class="insight" id="dimInsight"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">💎 核心天赋解读</h3>
+        <div id="coreContent"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">⚗️ 天赋组合 · 化学反应</h3>
+        <div id="comboContent"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">🌤 成长盲区 · 被忽略的另一面</h3>
+        <div id="blindContent"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">🎯 推荐职业方向 <span class="muted" id="careerCount"></span></h3>
+        <div id="careerList"></div>
+        <div class="insight" id="careerTip"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">🗓 7 天验证计划 <span class="muted" style="font-weight:400;font-size:13px">· 低成本验证天赋假设</span></h3>
+        <div id="planList"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec-title">✅ 下一步行动清单</h3>
+        <ul class="action-list" id="actionList"></ul>
+      </div>
+
+      <div class="card">
+        <details class="basis">
+          <summary>🔬 结论依据 · 这份报告是怎么算出来的（点击展开）</summary>
+          <div id="basisContent"></div>
+        </details>
+      </div>
+
+      <div class="card">
+        <div class="data-row">
+          <button onclick="shareReport()">📤 分享摘要</button>
+          <button onclick="exportData()">💾 导出备份</button>
+          <button onclick="document.getElementById('importFile').click()">📥 导入恢复</button>
+          <button onclick="clearData()">🗑️ 清空数据</button>
+        </div>
+        <input type="file" id="importFile" accept=".json" class="hidden" onchange="importData(event)">
+        <p class="muted" style="margin-top:12px">报告数据仅存于本地浏览器，未上传任何服务器；清除数据或换设备后记录消失。</p>
+      </div>
+
+      <div class="disclaimer">
+        ℹ️ <b>如何理解这份报告：</b>这是一份 20 题的快速倾向测评，反映的是你当下的<b>倾向与偏好</b>，不是精确的能力测量，更不是对你的定义。维度框架参考加德纳「多元智能理论」与大五人格「开放性」等组织而成——多元智能理论在学界存在争议，本报告把它当作<b>自察的镜子</b>而非科学定论。天赋 = 倾向 × 投入，请用 7 天计划去验证它。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ═══════════════ 配置 ═══════════════ */
+const CONFIG = {
+  requireActivation: false,          // 改为 true 开启激活码门槛
+  activationCodes: { '888888': 2, 'TIANFU2026': 2 },
+  adminPasscode: '8888'              // 管理员密码：网址后加 ?admin=8888 即可解锁本设备重测
+};
+const LS_KEY = 'talent_compass_v3'; // V3 新存储键，与旧版数据完全隔离
+
+/* ═══════════════ 维度定义（basis = 心理学对应构念，报告中展示）═══════════════ */
+const DIMENSIONS = ['创新创造','逻辑分析','语言表达','人际理解','自我觉察','审美设计','音乐感知','自然观察','身体操作','空间想象'];
+
+const DIM_INFO = {
+  '创新创造':{ verb:'天马行空的新思路', scenario:'从 0 到 1 的创新与突破',
+    basis:'发散思维（Guilford 的替代用途范式, 1967）——产生多样、新颖想法的认知能力',
+    strong:'你的大脑天然在「常规之外」运转——遇到事情总先想「能不能换个做法」，对新颖的方案感到兴奋，点子多、联想跳跃。这让你在别人卡壳的地方常常另辟蹊径。',
+    weak:'当环境要求稳定输出、重复执行时，你容易感到无聊。建议：把「求新」的冲动留给关键节点，日常事务用固定流程托管，省下脑力。',
+    work:'团队里的「点子发动机」，适合头脑风暴、方案创新、产品概念与内容策划的早期阶段。' },
+  '逻辑分析':{ verb:'清晰的思考框架', scenario:'复杂问题的拆解与决策',
+    basis:'认知需求 NFC（Cacioppo & Petty, 1982）——享受思考本身、偏好系统化推理的稳定特质',
+    strong:'你习惯透过现象看本质，用拆解、推理、验证去逼近真相。复杂的问题让你兴奋而非退缩，决策时更信任证据而不是感觉。',
+    weak:'对「数据不完美、必须先行动」的场景可能犹豫。建议：接受「七成把握就动手」，把剩下的三成交给快速迭代去验证。',
+    work:'团队里的「解谜者」，适合把混乱的问题理出头绪、给出可落地的判断。' },
+  '语言表达':{ verb:'精准而有感染力的表达', scenario:'对外沟通与内容输出',
+    basis:'言语流畅性与叙事能力——大五人格外向性与开放性的交汇处（Costa & McCrae）',
+    strong:'你能把想法讲清楚、甚至讲到人心里。无论书面还是口头，表达都自然流畅，擅长用语言影响他人、传递信息与情绪。',
+    weak:'表达欲强时容易说得比做得快。建议：在重要场合先确认「对方需要听什么」，再决定「我要说什么」。',
+    work:'团队里的「翻译官」，把专业内容讲给外行、把需求讲给团队。' },
+  '人际理解':{ verb:'读懂人心的共情力', scenario:'关系建立与团队协作',
+    basis:'共情（Davis 共情量表 IRI, 1983）与心智化（Mentalizing）能力——感知并理解他人情绪与意图',
+    strong:'你对人的情绪、动机和关系格外敏感，能快速建立信任、觉察氛围的微妙变化，是天然的团队粘合剂与协调者。',
+    weak:'高度在意他人感受容易消耗自己。建议：练习「课题分离」——共情是理解对方，不等于替对方承担情绪。',
+    work:'团队里的「关系雷达」，适合需要共情、协调、连接人的角色。' },
+  '自我觉察':{ verb:'对自我的清醒洞察', scenario:'自我管理与长期决策',
+    basis:'元认知（meta-cognition）与情绪粒度（emotional granularity, Feldman Barrett, 2004）——识别并细分自身内在状态的能力',
+    strong:'你能反观自己的情绪、动机与边界，知道自己要什么、容易被什么带偏。这种清醒让你在关键时刻少走弯路，也让你的判断更稳定。',
+    weak:'过度内省偶尔会变成自我怀疑。建议：觉察之后要有行动——把洞察变成一个具体的小改变，而不是新一轮反刍。',
+    work:'团队里的「定盘星」，在高压和不确定性中保持清醒。' },
+  '审美设计':{ verb:'天生的美感判断', scenario:'视觉与体验类工作',
+    basis:'开放性·审美体验 facet（大五人格 NEO-PI, Costa & McCrae）——审美敏感是开放性最稳定的子维度之一',
+    strong:'你对形式、比例、质感有本能的判断力，「好看 / 不好看」你一眼分得清，而且说得出差在哪里。这种品味在产品、内容、空间里都是稀缺的差异化能力。',
+    weak:'审美领先于技能时会有「眼高手低」的挫败感。建议：把落差当作路标而非打击——你能看出差距，恰恰说明眼光在前面。',
+    work:'团队里的「美感把关人」，适合视觉、体验、产品与内容的设计环节。' },
+  '音乐感知':{ verb:'对旋律节奏的天然敏感', scenario:'音乐与听觉类工作',
+    basis:'音乐智力与音高辨别（Gardner, 1983；注：多元智能理论在学界有争议）',
+    strong:'你对音高、节奏、音色有本能的辨别力，一段旋律听一两遍就能记住，甚至能在脑子里「回放」。这在音乐、声音设计、氛围营造上是天然优势。',
+    weak:'若暂时不从事相关领域，这项天赋常以「品味」的形式存在。建议：在内容创作、活动策划中启用你的听觉优势，配乐与节奏感能大幅提升感染力。',
+    work:'团队里的「声音顾问」，适合配乐、声音设计、节奏与氛围把控。' },
+  '自然观察':{ verb:'对规律与细节的敏锐捕捉', scenario:'研究、观察与分类类工作',
+    basis:'自然观察智力（Gardner, 1999 增补）与模式识别——从杂乱现象中提取规律的能力',
+    strong:'你善于在杂乱的现象中察觉规律、分类与联系——动植物、数据趋势、行为模式都可能被你一眼看穿。这是科研、品控、用户研究共同依赖的底层能力。',
+    weak:'对「物」的敏感有时胜过对「人」的敏感。建议：在需要洞察用户的场景，把观察对象从数据延伸到人的行为细节。',
+    work:'团队里的「显微镜」，适合研究、品控、用户研究与趋势洞察。' },
+  '身体操作':{ verb:'手脑并用的身体智慧', scenario:'动手操作与技能类工作',
+    basis:'身体-动觉智力（Gardner）与具身认知（embodied cognition）——通过身体行动进行学习与思考',
+    strong:'你的身体是思考的延伸——学动作快、手眼协调好、肌肉记忆强，习惯边做边想。很多别人「想不通」的问题，你动手做一遍就通了。',
+    weak:'偏好动手可能让你跳过规划。建议：动手前花 5 分钟写清「要什么结果」，能让你的执行力如虎添翼。',
+    work:'团队里的「动手派」，适合制作、操作、运动、演示与现场执行。' },
+  '空间想象':{ verb:'在脑中构建三维世界', scenario:'设计、工程与空间类工作',
+    basis:'空间认知与心理旋转（Vandenberg & Kuse 心理旋转测验 MRT, 1978）——心理表象操作能力的经典测量',
+    strong:'你能在脑子里旋转物体、预演布局，看平面图如同见实物，方向感与空间推理出色。这是建筑、工程、设计、建模领域的核心天赋。',
+    weak:'擅长「脑内建模」时容易低估画图沟通的价值。建议：把脑中的画面落到草图上，能让协作效率翻倍。',
+    work:'团队里的「空间架构师」，适合设计、工程、建模与方案可视化。' }
+};
+
+/* ═══════════════ 大题库：每维度 12 题（情境判断 + 行为频率），选项从最不符合→最符合升序 ═══════════════ */
+const BANK = {
+  '创新创造': [
+    { q:'一个用了很久的老办法突然行不通了，你会？', o:['再照原办法多试几遍','找用过类似办法的人取取经','在原办法上调整几个环节试试','大胆换一种从没试过的思路'] },
+    { q:'打开一份空白文档，要从零写点东西，你的第一感觉是？', o:['有点发怵，不知从哪下笔','先找找别人的模板和参考','列个提纲慢慢往里填','有点兴奋，空白正是发挥空间'] },
+    { q:'朋友们商量聚会怎么搞，你通常？', o:['都行，跟着大家','觉得去年那套就挺好','在常见方案里挑一个最优的','总忍不住提些没人想过的点子'] },
+    { q:'看到「这不可能做到」，你心里的声音更接近？', o:['确实，多数时候是这样','得看资源和条件够不够','以前不行，现在未必','「不可能」反而让我想试试'] },
+    { q:'过去一个月，你有多少次主动尝试没做过的新事物（新店、新工具、新玩法）？', o:['基本没有','一两次','三四次','几乎每周都有'] },
+    { q:'你脑子里「如果……会怎样」的念头出现得有多频繁？', o:['几乎没有','偶尔出现','比较频繁','停不下来'] },
+    { q:'团队方案敲定之后，你通常扮演的角色是？', o:['按定好的执行','帮忙查漏补缺','提一些优化建议','总忍不住想再改一版更大的'] },
+    { q:'如果给你一周完全自由的时间，你更可能？', o:['好好休息放松','把没做完的事做完','学一门想学很久的技能','动手做一个脑子里闪过很久的点子'] },
+    { q:'给新项目起名字这类「从零想」的事，你？', o:['让别人起，我不擅长','随便想一个交差','能想出几个备选','能想一大串，还越想越兴奋'] },
+    { q:'大家都说「一直都是这么做的」，你？', o:['那就照做','随大流，懒得深究','会想想有没有更好的','总觉得可以换个做法试试'] },
+    { q:'你的备忘录或收藏夹里，装得最多的是？', o:['基本不用备忘录','待办事项','有用的链接资料','突然冒出来的点子和灵感'] },
+    { q:'玩「你画我猜」或「故事接龙」，你？', o:['觉得难，怕表现不好','跟着大家的思路走','能给出有趣的发挥','经常给出让全场笑翻的方向'] }
+  ],
+  '逻辑分析': [
+    { q:'一件复杂的事情摆在面前，你习惯？', o:['先凭感觉判断个大概','问问有经验的人怎么看','找找有没有类似情况可参考','拆成一块块小问题逐个理清'] },
+    { q:'做重要决定时，你最依赖？', o:['当下的直觉','身边人的建议','过往的类似经验','数据和利弊清单'] },
+    { q:'看到一份统计表格，你通常？', o:['大概扫一眼结论就行','看看总数和涨跌','留意数据之间有没有矛盾','忍不住找数字背后的规律和异常'] },
+    { q:'听别人讲一件事的来龙去脉，你更在意？', o:['感受和氛围','结论是什么','说法之间说不说得通','每一步因果链是否成立'] },
+    { q:'看到「据研究表明」开头的文章，你？', o:['直接看结论','大概过一下','会留意样本和论证过程','忍不住查证数据来源和推理链'] },
+    { q:'日常做小决定（买什么、走哪条路）时，你？', o:['跟着感觉走','问身边人的意见','按老经验来','心里默默过一遍利弊'] },
+    { q:'朋友讲了一件特别离奇的事，你的第一反应？', o:['真有意思','追问后来呢','先问细节是否属实','脑中自动排查哪里不合理'] },
+    { q:'玩密室逃脱或剧本杀时，你通常？', o:['跟着大家走','负责搜证','能串起几条线索','最快捋出完整的推理链'] },
+    { q:'手机突然变得很卡，你？', o:['卡就卡着用','重启一下碰碰运气','清理一下后台','会排查到底是哪个环节出的问题'] },
+    { q:'两条路线都能到目的地，你？', o:['跟着导航走','选心情好的那条','凭经验选一条','会对比用时和路况再决定'] },
+    { q:'有人想说服你的时候，你更容易被？', o:['动人的故事说服','气场强的人说服','身边人一致的看法说服','逻辑严密的论证说服'] },
+    { q:'下棋或打牌时，你的风格更接近？', o:['想到哪走到哪','跟着感觉出牌','有一些固定套路','会推演后面几步再落子'] }
+  ],
+  '语言表达': [
+    { q:'要向完全外行的人解释一个专业概念，你会？', o:['有点头疼，经常越解释越乱','照专业说法讲，能懂多少随缘','能讲清楚，但比较平铺直叙','打个贴切的比方，几句话就让人懂'] },
+    { q:'在一群人面前发言，你的状态是？', o:['能不说就不说，紧张','提前打好稿子照着讲','略紧张，讲开了就好','挺自在，甚至越讲越有状态'] },
+    { q:'发一条重要的消息或邮件前，你会？', o:['想到什么写什么，直接发','检查有没有错别字','顺一遍逻辑通不通','反复斟酌措辞，在乎对方读后的感受'] },
+    { q:'聊天时别人话里有话，你？', o:['基本听不出来，事后才反应','察觉语气不对，但猜不准意思','大多能听出言外之意','很敏锐，连没说出口的期待都能捕捉'] },
+    { q:'发朋友圈或动态前，你会花多少时间斟酌文字？', o:['随手就发','基本不改','会改一两处','常常改到满意才发'] },
+    { q:'别人请你复述一部电影或一本书，你？', o:['不太爱复述','讲个大概','讲得有头有尾','讲得绘声绘色，别人爱听'] },
+    { q:'群聊话题冷场时，你通常？', o:['等别人先说','偶尔接一句','常能把话题接住','天然是暖场和收束话题的人'] },
+    { q:'学一个新概念，你更愿意？', o:['自己慢慢啃','看视频讲解','找人讨论','用自己的话讲给别人听'] },
+    { q:'写一段自我介绍，你？', o:['憋半天写不出来','套个模板写一个','能写得通顺得体','能写得让人一下记住你'] },
+    { q:'朋友让你帮忙改一段文案，你？', o:['改不了，不知从哪动','只能改改错别字','能理顺语句','能改出亮点，还给出几个版本'] },
+    { q:'安慰人时你说的话，通常？', o:['不知道说什么','翻来覆去那几句','说得还算中肯','总能说到点子上，让人觉得被理解'] },
+    { q:'聊天时你更常用？', o:['基本全是语音','语音多文字少','文字多语音少','几乎全文字，还会斟酌措辞和标点'] }
+  ],
+  '人际理解': [
+    { q:'走进一个都是陌生人的场合，你？', o:['有点手足无措，待在角落','等别人先来搭话','能找到看起来好聊的人聊起来','很快摸清场子里谁和谁是什么关系'] },
+    { q:'好朋友心情低落找你倾诉，你通常？', o:['不太会安慰，陪着就好','讲讲自己类似的经历宽慰 TA','安静听完，帮 TA 理理思路','先接住情绪，再给恰到好处的支持'] },
+    { q:'团队里气氛忽然微妙起来，你？', o:['后知后觉，别人说了才知道','隐约觉得不对，说不上来哪不对','大致能判断是谁之间出了问题','一眼看出谁不舒服、卡在哪个环节'] },
+    { q:'两个人起了争执都来找你评理，你？', o:['不想掺和，容易和稀泥','倾向支持更有道理的那方','分别听完，各劝一劝','能站在两边立场找到都能接受的解法'] },
+    { q:'身边人随口提过的小事（喜好、烦恼），你？', o:['基本记不住','能记住个别的','大多能记住','连当时的语气和细节都记得'] },
+    { q:'你能第一时间察觉身边人情绪不对吗？', o:['不太能，别人说我才发现','亲近的人才能','多数时候自己能感觉到','一进门就能感觉到气氛'] },
+    { q:'参加饭局或聚会，你更多时候在？', o:['低头吃','和熟的人聊','照顾冷场的人','观察每个人的状态和关系'] },
+    { q:'两位同事闹矛盾都向你吐槽对方，你？', o:['不知道说什么好','各自安慰一下','能听出各自的立场','能听出矛盾真正的症结在哪'] },
+    { q:'刚认识的人和你聊了一会儿，你能？', o:['记不住对方说过什么','记住对方的名字','记住对方的主要信息','连对方的性格和顾虑都心里有数'] },
+    { q:'有人开了个不好笑的玩笑，气氛尴尬，你？', o:['跟着一起尬住','假装笑一下','会出来打个圆场','能巧妙接话把气氛带回来'] },
+    { q:'朋友最近状态不对但没说，你？', o:['完全看不出来','感觉有点怪但不敢问','会找机会轻轻问一句','早就察觉并想好了怎么开口'] },
+    { q:'选礼物送人这件事，你？', o:['随便买一个','照着攻略买','按对方喜好买','总能选到让人眼前一亮的那件'] }
+  ],
+  '自我觉察': [
+    { q:'莫名心情低落的时候，你通常？', o:['说不清为什么，等它自己过去','知道不开心，但懒得深究','大概能猜到是哪件事引起的','能定位触发点，还知道自己惯用的应对方式'] },
+    { q:'被人当场指出问题，你的第一反应？', o:['不舒服，本能想反驳','表面接受，心里嘀咕','先听完，回头自己想想','能当场分清「说得对不对」和「爱不爱听」'] },
+    { q:'你对自己「擅长什么、不擅长什么」？', o:['没认真想过','别人说我才知道','大概有个模糊的印象','很清楚，而且定期更新对自己的认知'] },
+    { q:'一件事的结果不如预期，你会？', o:['过了就过了，不多想','遗憾一阵，但说不出原因','想想哪一步没做好','复盘整个决策链，提炼出下次的原则'] },
+    { q:'你会主动回想「我刚才为什么那样反应」吗？', o:['几乎不会','偶尔会','遇到大事才会','经常，几乎是习惯'] },
+    { q:'你能预判自己在什么情境下会情绪失控吗？', o:['不能，每次都很意外','出了状况才知道','大致知道自己的触发点','很清楚自己的雷区，还有应对预案'] },
+    { q:'写年终总结或复盘时，你？', o:['想不出写什么','列一下做了哪些事','能看出得与失','能提炼出自己的行为模式和下一步原则'] },
+    { q:'有人说你「变了」，你？', o:['没想过这个问题','有点意外','想想好像真是','清楚自己哪里变了、为什么变'] },
+    { q:'连续几天都很烦躁时，你会？', o:['不知道为什么就是烦','归因于最近运气不好','能找到大概的原因','能追溯到最近的哪个决定或习惯'] },
+    { q:'你知道自己「压力大时会有什么表现」吗？', o:['不知道','别人提醒才知道','大概知道','很清楚，还会提前给自己安排缓冲'] },
+    { q:'做选择前，你清楚自己「为什么想要」吗？', o:['没想过这个问题','有时会想','多数时候清楚','很清楚，还分得清是「我想要」还是「别人觉得我该要」'] },
+    { q:'想象一年后的自己，你？', o:['说不上来','希望有变化但没具体想法','知道该改哪几件事','有清晰的目标和改变路径'] }
+  ],
+  '审美设计': [
+    { q:'一个页面或房间的配色摆在你眼前，你？', o:['看不出什么门道','能感觉舒服不舒服，说不出为什么','说得出哪里好、哪里差点意思','脑子里立刻冒出「改成…会更好」'] },
+    { q:'挑东西（手机壳 / 衣服 / 杯子）时，你更看重？', o:['实用，好看不值钱','价格合适，样子过得去','质感和细节经得起看','会被「设计感」击中，愿意为美买单'] },
+    { q:'看到一件广受好评的设计作品，你？', o:['无感，不明白好在哪','看完觉得「还行」','停下来研究它为什么受欢迎','逐个细节拆解，想着怎么用到自己的事上'] },
+    { q:'朋友请你帮忙看海报 / 穿搭 / 排版，你？', o:['给不出意见，都挺好','只能凭感觉说喜欢哪个','能指出明显的毛病','能给到颜色、间距、字体层面的具体建议'] },
+    { q:'看到排版很乱的海报或页面，你？', o:['无所谓','有点不舒服','会想帮它摆好','手痒，脑子里已经在重新排版'] },
+    { q:'功能一样、颜值不同的两个东西，价差 20%，你？', o:['果断选便宜的','犹豫一下','多半选好看的','不犹豫，选好看的那个'] },
+    { q:'拍照发朋友圈时，你？', o:['随手一拍','挑一张就行','会找角度和构图','调色修图一条龙'] },
+    { q:'你为「好看」多花过钱吗？', o:['从不','偶尔','看情况','经常，颜值本身就是价值'] },
+    { q:'朋友装修新房问你意见，你最关注？', o:['性价比','耐不耐脏','风格统不统一','光线、比例和动线这些细节'] },
+    { q:'走在街上，你更容易注意到？', o:['什么都没看','打折信息','橱窗里好看的东西','整条街的招牌和店面设计水平'] },
+    { q:'你手机相册里的照片，大部分？', o:['随手抓拍','人像和合影','构图讲究的照片','调过色的、像作品的照片'] },
+    { q:'看到「网红店」的装修，你？', o:['没什么感觉','拍照打卡就走','能看出流行元素','能看出它是跟风还是有真设计'] }
+  ],
+  '音乐感知': [
+    { q:'听到一首新歌，你通常会？', o:['当背景音，不专门听','只留意好不好听','注意旋律和编曲的细节','听一两遍就能哼出来，还想研究它的结构'] },
+    { q:'有人说某段音乐跑调了，你？', o:['完全听不出来','特别明显时才能察觉','一般的小走音也逃不过耳朵','一点不准就觉得浑身别扭'] },
+    { q:'K 歌或学一首新歌，你？', o:['五音不全，能躲就躲','跟唱很多遍才找得到调','几遍就能唱得像模像样','调子和节奏上手就来，常被夸唱得准'] },
+    { q:'影视剧或游戏里的配乐，你？', o:['基本没注意过','高潮处能感觉到音乐在烘托','会留意音乐和剧情的配合','音乐不对味会出戏，甚至会去搜原声'] },
+    { q:'你会单曲循环一首歌吗？', o:['不会','偶尔','常干这事','循环的同时还在扒它的细节'] },
+    { q:'一首歌里除了人声的乐器，你能听出几种？', o:['听不出来','大概一两种','多数能分辨','连声部层次和混音细节都能听出'] },
+    { q:'听到节奏感强的音乐，你？', o:['没什么感觉','心里跟着数拍子','脚会不自觉打拍子','整个身体自动跟上律动'] },
+    { q:'朋友唱歌跑调了但自己没察觉，你？', o:['听不出来','隐约觉得哪里怪','能听出跑调了','能听出具体哪里跑、差多少'] },
+    { q:'看电影你会留意片头曲片尾曲吗？', o:['从来不听','演职员表时就走了','会听完再走','会特意搜出完整版来听'] },
+    { q:'同一首歌的翻唱版本，你？', o:['听不出区别','觉得都差不多','能说出哪个更好听','能说出编曲、调性、律动各差在哪'] },
+    { q:'戴耳机听歌时，你更在意？', o:['能响就行','音量够不够','音质好坏','解析力和声场层次'] },
+    { q:'走路时你脑子里通常？', o:['在想事情','什么都没有','在哼歌','在「播放」歌单，还自动循环'] }
+  ],
+  '自然观察': [
+    { q:'去公园或郊外，你更容易？', o:['放空发呆，放松就好','拍拍风景照','注意到花花草草和小动物','忍不住辨认动植物的种类和状态'] },
+    { q:'面对一堆杂乱的现象或数据，你？', o:['看着就头大','能看出个大概趋势','能发现几处明显异常','擅长从中理出规律和模式'] },
+    { q:'看到天上的云、傍晚的天色，你？', o:['没什么特别感觉','觉得好看，会拍下来','留意天气变化的迹象','能大致预判接下来的天气走向'] },
+    { q:'整理东西（文件 / 收藏 / 杂物），你？', o:['从不分类，能找到就行','大致分一分','有一套自己的分类习惯','享受归类，还会不断优化分类体系'] },
+    { q:'身边环境的细微变化（绿植新芽、货架换位），你？', o:['从不注意','偶尔注意到','经常注意到','还会琢磨为什么会变'] },
+    { q:'刷到一条新信息，你更关注它的？', o:['热闹的部分','单个亮点','和已知信息的联系','背后的趋势和规律'] },
+    { q:'家里的物品，你？', o:['随手放','大致归位','每样有固定位置','有一套不断优化的归置体系'] },
+    { q:'别人指着东西问「这是什么」时，你常常是？', o:['一起蒙','能猜个大概','认识不少','那是我的主场，还能讲出门道'] },
+    { q:'小区楼下的植物，你？', o:['从来没注意过','知道有树有花','能认出几种','大部分叫得出名字，还看过它们四季变化'] },
+    { q:'和朋友出去玩，攻略通常谁做？', o:['我不做，跟着走','帮忙订个票','会做基础攻略','能做出连天气、人流规律都算进去的攻略'] },
+    { q:'动物纪录片最吸引你的是？', o:['不太爱看','精彩猎捕的场面','动物的行为本身','行为背后的规律和成因'] },
+    { q:'一段时间后回看自己的记录（相册 / 账单 / 日记），你？', o:['从来不回看','偶尔翻翻','会看看总结','能从中看出模式和趋势'] }
+  ],
+  '身体操作': [
+    { q:'学一个新动作（舞步 / 球类 / 健身），你？', o:['笨手笨脚，学得慢还忘','得分解动作慢慢练','练几遍就能成型','看别人做一遍就能模仿个八九不离十'] },
+    { q:'东西坏了要修，你？', o:['直接找人帮忙','照着视频一步步来','拆开看看，边试边修','手到擒来，还享受拆装的过程'] },
+    { q:'学新技能时你偏好？', o:['看书或听讲','看教学视频','跟着别人做一遍','必须亲手操作才学得会'] },
+    { q:'做饭 / 修理 / 搭建这类动手的事，你？', o:['能不碰就不碰','照着菜谱或说明书能完成','做得还行，偶尔翻车','手很巧，成品常被夸'] },
+    { q:'上手一个新软件或新设备时，你？', o:['怕点错，先看教程','按提示一步步来','到处点点试试','直接上手，很快摸出门道'] },
+    { q:'你动手做东西（做饭 / 修理 / 手工）的频率？', o:['几乎不做','需要时才做','每周都会有','几乎天天都想动手'] },
+    { q:'看别人做一个动作示范，你？', o:['看完还是不会','需要分解教学','跟着做几遍就会','看完身体就能复现'] },
+    { q:'搬家组装家具时，你？', o:['全程找人帮忙','负责递工具','能独立装好','装得又快又稳，还享受过程'] },
+    { q:'体育课学新动作，你通常是？', o:['老师最担心的那个','跟着练的普通一员','示范组的一员','直接被老师拉出来示范的那个'] },
+    { q:'打游戏时你更擅长？', o:['手残党','休闲玩玩','操作类游戏玩得不错','公认的操作大神'] },
+    { q:'拆快递、拆包装这种小事，你？', o:['撕不开就上牙','随便撕','拆得干净利落','拆得又快又完整，还会留着再利用'] },
+    { q:'练琴 / 健身 / 手工这类需要「练」的事，你？', o:['坚持不下来','需要别人督促','自己能坚持','上手快还越练越上瘾'] }
+  ],
+  '空间想象': [
+    { q:'看平面图或地图时，你？', o:['一头雾水','要慢慢对照才能看懂','基本能直接看懂','脑子里立刻浮现出立体样子'] },
+    { q:'能在脑海里旋转一个物体、想象它的背面吗？', o:['很难，想不出来','有点费劲','可以，比较自然','轻松，像自带 3D 引擎'] },
+    { q:'去一个新地方，你的认路方式是？', o:['离开导航就迷路','记几个关键路口','走过一遍就大致记得','脑中有方位地图，还能带别人走'] },
+    { q:'布置房间或摆放物品前，你会？', o:['先塞进去再说','凭感觉摆','大概规划一下位置','脑中先模拟几版布局效果再动手'] },
+    { q:'听别人口头描述一个地方或布局，你脑子里？', o:['没什么画面','有个模糊的印象','能拼出大概','像放电影一样清晰'] },
+    { q:'凭记忆画出自己家或房间的平面布局，你？', o:['画不出来','大概位置对','基本准确','连尺寸比例都差不了多少'] },
+    { q:'逛商场或景区找路时，你？', o:['全程跟着别人走','留意指示牌','记住几个地标','脑中有整体方位感'] },
+    { q:'走过一次的路线，下次你？', o:['还得重新导航','印象模糊','大致记得','直接带路走'] },
+    { q:'停车入库这件事，你？', o:['很难，经常停不进去','要来回好几把','一把基本能进','侧方倒车都轻松'] },
+    { q:'跟着教程折纸，你？', o:['折出来完全不是那回事','要跟着视频一步步','看着图就能折','看一眼成品就能琢磨出折法'] },
+    { q:'估计一个箱子里能装下多少东西，你？', o:['完全没概念','大概估一下','估得比较准','估得又快又准，还能优化摆放方案'] },
+    { q:'记忆里老家房间的布局，你能？', o:['想不起来了','记得大概','能画出主要布局','连细节摆放都历历在目'] }
+  ]
+};
+
+/* ═══════════════ 五大篇章 ═══════════════ */
+const SECTIONS = [
+  { name:'思维引擎', desc:'先看看你的大脑偏爱怎么运转' },
+  { name:'表达与共情', desc:'你与文字、与人相处的方式' },
+  { name:'感官审美', desc:'你的眼睛和耳朵的天赋' },
+  { name:'观察与动手', desc:'你如何探索并动手改变世界' },
+  { name:'内在与空间', desc:'你如何理解自己、想象世界' }
+];
+const SECTION_DIMS = [
+  ['创新创造','逻辑分析'], ['语言表达','人际理解'], ['审美设计','音乐感知'],
+  ['自然观察','身体操作'], ['自我觉察','空间想象']
+];
+
+/* ═══════════════ 思维对决题库：每篇章 5 组，强迫选择（两个选项同样有吸引力）═══════════════ */
+const DUELS = [
+  [ { q:'周末只有一张门票，你选？', a:'「即兴创作营」——从零开始做出一件新东西', b:'「硬核解谜局」——破解一套环环相扣的谜题' },
+    { q:'两种超能力只能拥有一个？', a:'「点子永动机」——灵感源源不断涌现', b:'「一眼看穿」——任何复杂问题瞬间看到本质' },
+    { q:'领导同时给你两个任务，你先接？', a:'为老产品想一个全新方向', b:'理清一团乱麻的流程问题' },
+    { q:'退休后你最想过的日子是？', a:'开一间创意工作室，天天捣鼓新东西', b:'埋头研究几个没人解开的难题' },
+    { q:'更愿意跟谁搭伙做事？', a:'点子狂飙但善变的伙伴', b:'稳如磐石但偏保守的搭档' } ],
+  [ { q:'一场活动里你更想扮演？', a:'讲述者——把好故事讲给全场听', b:'对话者——一对一聊进对方心里' },
+    { q:'哪种时刻更让你有成就感？', a:'你写的话被很多人转发', b:'朋友说「你是最懂我的人」' },
+    { q:'会议卡壳时你的本能是？', a:'先把问题讲清楚、说明白', b:'先留意谁没说话、谁不舒服' },
+    { q:'穿越回古代，你选哪个身份？', a:'名满天下的说书人', b:'皇帝身边的贴心谋士' },
+    { q:'团队聚餐你更愿意坐在？', a:'主持全桌话题的位置', b:'照顾角落里安静的人旁边' } ],
+  [ { q:'为一支短片负责一件事，你选？', a:'画面——调色、构图、字幕', b:'声音——配乐、音效、节奏' },
+    { q:'一个理想的下午？', a:'看展逛设计店，让眼睛过瘾', b:'戴上耳机听一场 Live，让耳朵过瘾' },
+    { q:'朋友的新房间请你来点睛，你会先？', a:'调整配色和陈设的比例', b:'选一套契合氛围的歌单' },
+    { q:'只能保留一种感官体验？', a:'世上所有美的画面', b:'世上所有美的声音' },
+    { q:'婚礼上你负责哪件事？', a:'现场布置与视觉呈现', b:'歌单设计与现场音乐' } ],
+  [ { q:'两天假期只能选一个？', a:'自然观察营——记录物种与天气的规律', b:'手作工坊——亲手做一件木器' },
+    { q:'你更想成为哪种人？', a:'一眼认出动植物、看得出规律的人', b:'一双手什么都能修、能做的人' },
+    { q:'拿到一盒陌生的样本或零件，你？', a:'先分类、找规律', b:'直接动手拼起来' },
+    { q:'荒岛求生你更依赖？', a:'对环境和规律的洞察', b:'一双什么都能做出来的手' },
+    { q:'纪录片你更爱看？', a:'《地球脉动》式的自然奇观', b:'《寿司之神》式的匠人手艺' } ],
+  [ { q:'独处的一小时，你更愿意？', a:'写复盘日记，梳理自己', b:'玩 3D 拼装或空间谜题' },
+    { q:'哪种能力更让你心动？', a:'随时读懂自己的情绪与动机', b:'脑中自由构建并旋转立体世界' },
+    { q:'朋友请你给个人生建议，你更依赖？', a:'对自己内心的清醒盘点', b:'对环境和路径的整体推演' },
+    { q:'更想要哪种天赋？', a:'随时知道自己的真实状态', b:'脑中自带 3D 建模仪' },
+    { q:'压力大的时候你会？', a:'向内梳理自己的情绪', b:'去开阔的地方走一走让视野打开' } ]
+];
+
+/* ═══════════════ 天赋类型（按加权匹配度动态判定）═══════════════ */
+const TYPES = [
+  { name:'艺术创作型', emoji:'🎨',
+    weights:{ '创新创造':1.2, '审美设计':1.2, '音乐感知':1.0, '语言表达':0.6 },
+    desc:'感受力极强的创作者——世界在你眼里自带灵感滤镜，你擅长用作品表达别人说不出的东西。',
+    combo:'创意 × 品味 × 表达：你产出的东西天然带有「美感辨识度」，从内容到设计都能形成个人风格。',
+    watch:'审美领先技能时会有「眼高手低」的挫败期——这不是能力问题，恰恰说明你的眼光走在前面。',
+    plan:[ '选定一个想尝试的作品形式（图文 / 视频 / 设计 / 音乐），收藏 5 个欣赏的样板',
+           '动手做出第一版，允许它粗糙，完成比完美重要','把作品发给 2-3 个人，只收集第一反应，不解释',
+           '根据反馈修改一版，体会「表达 → 回应」的循环','挑一个平台发布出去，让作品见到真实世界',
+           '复盘：做的过程中哪一段让你忘记时间？','把这段「忘记时间」的体验记下来——它指向你的天赋区' ] },
+  { name:'逻辑分析型', emoji:'🔬',
+    weights:{ '逻辑分析':1.2, '空间想象':0.8, '自然观察':0.8, '自我觉察':0.5 },
+    desc:'天生的解谜者——复杂和混乱对别人是压力，对你是可以拆解的有趣问题。',
+    combo:'拆解 × 建模 × 验证：你能在复杂系统中找到关键变量，把模糊的问题变成清晰的答案。',
+    watch:'过度分析可能导致决策瘫痪——学会「七成把握就动手」，剩下三成交给迭代。',
+    plan:[ '选定一个你好奇的现象或公开数据集','完成一次完整分析：提出假设 → 找证据 → 得结论',
+           '把结论压缩成一页纸，只留最关键的发现','讲给一位外行听，检验 TA 能否听懂',
+           '收集「哪里没听懂」，针对性修改','形成你的第一个分析作品，存入作品集',
+           '复盘：分析过程中哪一步让你最有「破案感」？' ] },
+  { name:'人际影响型', emoji:'🤝',
+    weights:{ '人际理解':1.2, '语言表达':1.0, '自我觉察':0.8 },
+    desc:'读懂人心的连接者——你能感知房间里的情绪暗流，并用语言把人聚到一起。',
+    combo:'倾听 × 共情 × 引导：你是天然的团队粘合剂，能让一群人发挥出 1+1>2 的效果。',
+    watch:'过于在意他人感受可能消耗自己——共情是理解对方，不等于替对方承担情绪。',
+    plan:[ '列出身边 5 位不同背景的朋友，写下他们近况和可能的需求','约其中 2 人深聊，练习纯倾听：全程不给建议',
+           '组织一次小规模聚会或线上讨论，实践协调','收集大家的感受：哪里舒服、哪里可以更好',
+           '复盘每次对话：哪个瞬间对方明显放松或打开了？','把观察写成「人的规律」笔记',
+           '复盘：与人协作的哪个环节最给你能量？' ] },
+  { name:'行动实干型', emoji:'🛠️',
+    weights:{ '身体操作':1.2, '创新创造':0.6, '自然观察':0.6, '人际理解':0.4, '自我觉察':0.4 },
+    desc:'用行动思考的实干家——很多别人想来想去的事，你动手做一遍就有答案。',
+    combo:'动手 × 试错 × 迭代：你以行动速度快著称，能在实践中快速找到可行解。',
+    watch:'节奏快可能让协作者跟不上——关键节点放慢半拍，把你的思路说出来带着大家走。',
+    plan:[ '定一个 7 天能见效的小目标，拆成每天可执行的步骤','启动第一天的行动，不求完美只求开始',
+           '保持节奏，随手记录卡点','邀请 1 人监督或搭伙，增加外部驱动力','完成一个阶段性成果，哪怕很小',
+           '把过程和结果展示给别人看','复盘：哪一步最有成就感？那个方向值得加码' ] }
+];
+
+/* ═══════════════ 职业池（按维度权重动态计算匹配度）═══════════════ */
+const CAREERS = [
+  { name:'内容创作者 / 自媒体', w:{'创新创造':.3,'语言表达':.3,'审美设计':.2,'自我觉察':.2}, fit:'把想法与体验做成图文或视频内容', risk:'需要持续产出与面对公开反馈', first:'从一两个平台持续更新开始' },
+  { name:'UI / UX 设计师', w:{'审美设计':.35,'创新创造':.25,'空间想象':.2,'逻辑分析':.2}, fit:'打造用户喜爱的产品界面与体验', risk:'需持续学习工具与趋势', first:'从拆解优秀案例、临摹作品集开始' },
+  { name:'数据分析师', w:{'逻辑分析':.4,'自然观察':.3,'自我觉察':.15,'空间想象':.15}, fit:'从数据中发现业务洞察', risk:'需掌握工具与方法论', first:'从 Excel 进阶 + SQL 基础入门' },
+  { name:'产品经理', w:{'逻辑分析':.3,'人际理解':.25,'创新创造':.2,'语言表达':.15,'自我觉察':.1}, fit:'定义产品方向与优先级', risk:'需在多方诉求间协调取舍', first:'从端到端负责一个小功能开始' },
+  { name:'教师 / 培训师', w:{'语言表达':.3,'人际理解':.3,'自我觉察':.2,'创新创造':.2}, fit:'把知识讲明白，陪伴他人成长', risk:'需要持续的输出与耐心', first:'从助教、兼职讲师或内部分享开始' },
+  { name:'HR / 组织发展', w:{'人际理解':.4,'自我觉察':.25,'语言表达':.2,'逻辑分析':.15}, fit:'人才发展与组织文化建设', risk:'需处理复杂人际情境', first:'从招聘或员工关系模块切入' },
+  { name:'心理咨询 / 教练', w:{'人际理解':.35,'自我觉察':.35,'语言表达':.2,'逻辑分析':.1}, fit:'支持他人认识自己、走出困境', risk:'需要系统受训与长期督导', first:'从心理学基础与倾听练习开始' },
+  { name:'市场 / 品牌策划', w:{'创新创造':.3,'语言表达':.25,'人际理解':.25,'审美设计':.2}, fit:'策划创意与传播方案', risk:'节奏快、需追热点', first:'从运营一个小项目或账号的营销做起' },
+  { name:'销售 / 客户经理', w:{'人际理解':.35,'语言表达':.25,'自我觉察':.2,'逻辑分析':.1,'身体操作':.1}, fit:'建立信任、达成合作', risk:'业绩压力与不确定性', first:'从一线销售或客户支持做起' },
+  { name:'工程 / 建筑 / 结构设计', w:{'空间想象':.4,'逻辑分析':.3,'创新创造':.15,'身体操作':.15}, fit:'把脑中蓝图变成现实结构', risk:'专业门槛高、周期长', first:'从专业软件建模学习开始' },
+  { name:'手作 / 工艺 / 主理人', w:{'身体操作':.35,'审美设计':.25,'创新创造':.2,'自然观察':.2}, fit:'做出有温度的实体产品', risk:'需兼顾手艺与经营', first:'从市集摆摊或线上小店起步' },
+  { name:'运动教练 / 康复师', w:{'身体操作':.4,'人际理解':.25,'自我觉察':.2,'自然观察':.15}, fit:'用身体智慧帮助他人', risk:'需专业认证与体力', first:'从考取基础教练证开始' },
+  { name:'音乐 / 声音相关', w:{'音乐感知':.5,'创新创造':.2,'审美设计':.2,'自我觉察':.1}, fit:'创作或制作打动人的声音', risk:'行业竞争激烈、收入波动', first:'从配乐接单或音频内容做起' },
+  { name:'科研 / 品控 / 用户研究', w:{'自然观察':.4,'逻辑分析':.3,'自我觉察':.15,'创新创造':.15}, fit:'在细节与规律中找到真相', risk:'需耐心与系统方法', first:'从参与一个研究或调研项目开始' },
+  { name:'项目经理', w:{'逻辑分析':.25,'人际理解':.25,'自我觉察':.25,'语言表达':.15,'创新创造':.1}, fit:'推动复杂事情按期落地', risk:'需处理多方突发状况', first:'从牵头一个小项目开始积累' },
+  { name:'作家 / 编剧 / 文案', w:{'语言表达':.4,'创新创造':.25,'自我觉察':.2,'审美设计':.15}, fit:'用文字构建世界与共鸣', risk:'收入不稳定、需长期练笔', first:'从短篇投稿或商业文案练手' }
+];
+
+/* 精选组合文案（未命中时用动态生成兜底） */
+const CURATED_COMBOS = {
+  '创新创造|逻辑分析':'创意与逻辑兼得：你既能跳出框架想点子，又能把点子拆解成可执行的路径——这是产品经理与创业者最稀缺的黄金组合。',
+  '创新创造|语言表达':'点子多又会讲：你不仅能想到新东西，还能把愿景讲得让人愿意跟进，天生适合内容创作与策划牵头。',
+  '创新创造|审美设计':'有想法又有品味：你的创意自带美感滤镜，产出物在「新」和「美」上同时占优，容易形成个人风格。',
+  '创新创造|自我觉察':'清醒的创造者：一边产出新想法，一边校准自己的方向，不容易跑偏，作品里会有真实的自我表达。',
+  '逻辑分析|自然观察':'规律捕手：你既会拆解问题，又能从杂乱现象中嗅出模式——科研与数据分析的底层配置。',
+  '逻辑分析|空间想象':'结构化思维：既能推理又能脑内建模，硬核技术类工作的标准配置。',
+  '人际理解|语言表达':'人心翻译官：你能读懂人，还能把话说到人心里——天生的沟通者、协调者与讲述者。',
+  '人际理解|自我觉察':'双商在线：对内看得清自己，对外读得懂他人，是团队信任的支点，也是领导力的底座。',
+  '人际理解|身体操作':'手把手的影响力：你在现场、在动作中与人连接，教学、教练、现场执行类角色的天赋组合。',
+  '审美设计|音乐感知':'全感官审美：眼睛和耳朵同时在线，对氛围与节奏的把握超出常人，内容创作的稀缺组合。',
+  '身体操作|空间想象':'立体实干家：手上功夫和脑中蓝图同时在线，从工程到手作都吃得开。',
+  '语言表达|自我觉察':'走心的表达者：你知道自己在说什么、为什么说，文字因此有真实的分量。'
+};
+
+/* ═══════════════ 状态 ═══════════════ */
+let state = load();
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_KEY));
+    if(s && typeof s === 'object'){
+      // 旧版本会话校验：缺少 k 字段的卷子来自旧题库，直接作废
+      if(s.session && (!Array.isArray(s.session.qs) || s.session.qs.some(q => !q.k))) s.session = null;
+      return s;
+    }
+  }catch(e){}
+  return { activated:false, adminMode:false, codeUses:{}, session:null, completed:false, reportAt:null };
+}
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+
+let view = 'home', cur = 0;
+const TOTAL = 20;
+
+/* ═══════════════ 通用 ═══════════════ */
+function $(id){ return document.getElementById(id); }
+let toastTimer = null;
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ═══════════════ 激活 ═══════════════ */
+function tryActivate(){
+  const code = $('codeInput').value.trim().toUpperCase();
+  const ok = CONFIG.activationCodes[code];
+  const used = state.codeUses[code] || 0;
+  if(!ok){ $('gateErr').textContent = '激活码无效，请检查后重试'; return; }
+  if(used >= ok){ $('gateErr').textContent = '该激活码使用次数已达上限'; return; }
+  state.codeUses[code] = used + 1;
+  state.activated = true;
+  save();
+  enterApp();
+}
+function enterApp(){
+  $('gateView').classList.add('hidden');
+  $('mainNav').classList.remove('hidden');
+  switchTab('home');
+}
+
+/* ═══════════════ 视图 ═══════════════ */
+function switchTab(tab){
+  view = tab;
+  ['homeView','quizView','doneView','reportView'].forEach(id => $(id).classList.add('hidden'));
+  const map = { home:'homeView', quiz:'quizView', report:'reportView' };
+  if(map[tab]) $(map[tab]).classList.remove('hidden');
+  [['home','tabHome'],['quiz','tabQuiz'],['report','tabReport']].forEach(([k,id])=>{
+    $(id).classList.toggle('active', tab===k);
+  });
+  if(tab === 'home') renderHome();
+  if(tab === 'quiz') renderQuestion();
+  if(tab === 'report') renderReport();
+  window.scrollTo(0,0);
+}
+
+function renderHome(){
+  const locked = state.completed && !state.adminMode;
+  const inProgress = !state.completed && state.session && state.session.answers.some(a=>a!==null);
+  $('adminBar').classList.toggle('hidden', !state.adminMode);
+  $('lockBox').classList.toggle('hidden', !locked);
+  $('startBtn').classList.toggle('hidden', locked);
+  $('resumeBtn').classList.toggle('hidden', !inProgress);
+  $('retakeBtn').classList.toggle('hidden', !(state.adminMode && state.completed));
+}
+
+/* ═══════════════ 随机组卷 ═══════════════
+   每篇章：两维度随机决定谁抽 2 题/谁抽 1 题（C(12,2)×C(12,1) 种），3 题随机排序，
+   再从该篇章 5 组对决中随机抽 1 组压轴。5 篇章 × 4 题 = 20 题。
+   组合空间 ≈ (2 × 66 × 12 × 6 × 5)^5 > 10^21 种。 */
+function buildSession(){
+  const qs = [];
+  SECTION_DIMS.forEach((dims, si) => {
+    const [A, B] = dims;
+    const twoFirst = Math.random() < .5;
+    const dimTwo = twoFirst ? A : B, dimOne = twoFirst ? B : A;
+    const pick = (d, n) => shuffle(BANK[d]).slice(0, n).map(it => ({ k:'scale', q:it.q, o:it.o, d }));
+    const sec = shuffle([ ...pick(dimTwo,2), ...pick(dimOne,1) ]);
+    const duel = shuffle(DUELS[si])[0];
+    qs.push(...sec, { k:'duel', q:duel.q, a:{t:duel.a, d:A}, b:{t:duel.b, d:B} });
+  });
+  return { qs, answers:new Array(qs.length).fill(null), cur:0 };
+}
+
+function startQuiz(){
+  if(state.completed && !state.adminMode){
+    toast('本设备已完成测评（一机一次）。管理员可在网址后加 ?admin=' + CONFIG.adminPasscode + ' 解锁');
+    switchTab('home');
+    return;
+  }
+  if(!state.session) state.session = buildSession();
+  cur = state.session.cur || 0;
+  if(cur >= state.session.qs.length) cur = 0;
+  state.session.cur = cur;
+  save();
+  switchTab('quiz');
+}
+
+function confirmRetake(){
+  if(!state.adminMode){
+    toast('一机一次：重新测评需管理员模式（网址后加 ?admin=' + CONFIG.adminPasscode + '）');
+    return;
+  }
+  if(confirm('管理员模式：重新测评将覆盖上次结果，确定吗？')){
+    state.session = buildSession();
+    state.completed = false;
+    cur = 0;
+    save();
+    switchTab('quiz');
+  }
+}
+
+function toggleAdmin(on){
+  state.adminMode = on;
+  save();
+  renderHome();
+  toast(on ? '管理员模式已开启 👤' : '管理员模式已关闭');
+}
+
+/* ═══════════════ 答题 ═══════════════ */
+function renderQuestion(){
+  const s = state.session;
+  if(!s){ switchTab('home'); return; }
+  const q = s.qs[cur];
+  const secIdx = Math.floor(cur/4), posInSec = cur%4 + 1;
+  const answered = s.answers.filter(a=>a!==null).length;
+
+  $('progressLabel').textContent = `第 ${cur+1} 题 / 共 ${TOTAL} 题`;
+  $('progressLeft').textContent = answered >= TOTAL ? '全部完成 ✓' : `还剩 ${TOTAL - answered} 题`;
+  $('progressFill').style.width = (answered/TOTAL*100) + '%';
+  $('questionText').textContent = q.k === 'duel' ? q.q + '（二选一）' : q.q;
+
+  let dots = '';
+  for(let i=0;i<TOTAL;i++){
+    const isDuel = s.qs[i] && s.qs[i].k === 'duel';
+    const cls = [isDuel?'duel':'', s.answers[i]!==null?'done':(i===cur?'now':'')].join(' ');
+    dots += `<i class="${cls}"></i>`;
+  }
+  $('dots').innerHTML = dots;
+
+  const chip = $('sectionChip');
+  const letters = ['A','B','C','D'];
+  const sel = s.answers[cur];
+
+  if(q.k === 'duel'){
+    chip.className = 'section-chip duel-chip';
+    chip.textContent = `⚔️ 第${'一二三四五'[secIdx]}部分 · ${SECTIONS[secIdx].name} · 思维对决`;
+    $('optionsContainer').innerHTML = `
+      <div class="duel-note">两个选项都很诱人？没错——<b>选更让你心动的那一个</b>，你的偏好就藏在这个选择里。</div>
+      <div class="duel-wrap">
+        <div class="duel-opt${sel==='a'?' selected':''}" onclick="selectDuel('a')">
+          <span class="duel-badge">A</span><span class="duel-t">${esc(q.a.t)}</span>
+        </div>
+        <div class="duel-opt${sel==='b'?' selected':''}" onclick="selectDuel('b')">
+          <span class="duel-badge">B</span><span class="duel-t">${esc(q.b.t)}</span>
+        </div>
+      </div>`;
+  } else {
+    chip.className = 'section-chip';
+    chip.textContent = `第${'一二三四五'[secIdx]}部分 · ${SECTIONS[secIdx].name}（${posInSec}/3）`;
+    $('optionsContainer').innerHTML = q.o.map((t,i)=>
+      `<div class="option${sel===i+1?' selected':''}" onclick="selectOption(${i})">
+         <span class="option-letter">${letters[i]}</span><span>${esc(t)}</span>
+       </div>`).join('');
+  }
+
+  $('prevBtn').disabled = cur === 0;
+  const isLast = cur === TOTAL-1;
+  $('nextBtn').textContent = isLast ? '✅ 完成测评' : '下一题 ➡️';
+  $('nextBtn').disabled = s.answers[cur] === null;
+}
+
+function onAnswered(){
+  const s = state.session;
+  save();
+  renderQuestion();
+  const total = s.answers.filter(a=>a!==null).length;
+  if(total === 5) toast('完成 1/4，节奏很好 🎯');
+  if(total === 10) toast('过半了！保持第一直觉 💪');
+  if(total === 15) toast('只剩 5 题，马上见分晓 ✨');
+  if(cur < TOTAL-1) setTimeout(()=>{ cur++; s.cur = cur; save(); renderQuestion(); }, 240);
+}
+function selectOption(i){
+  state.session.answers[cur] = i+1;
+  state.session.cur = cur;
+  onAnswered();
+}
+function selectDuel(side){
+  state.session.answers[cur] = side;
+  state.session.cur = cur;
+  onAnswered();
+}
+
+function nextQuestion(){
+  const s = state.session;
+  if(s.answers[cur] === null){ toast('请先选择一个选项'); return; }
+  if(cur < TOTAL-1){ cur++; s.cur = cur; save(); renderQuestion(); }
+  else completeQuiz();
+}
+function prevQuestion(){
+  if(cur > 0){ cur--; state.session.cur = cur; save(); renderQuestion(); }
+}
+
+function completeQuiz(){
+  const s = state.session;
+  const missing = s.answers.findIndex(a=>a===null);
+  if(missing !== -1){ cur = missing; save(); renderQuestion(); toast(`还有 ${s.answers.filter(a=>a===null).length} 题未作答`); return; }
+  state.completed = true;
+  state.reportAt = new Date().toISOString();
+  save();
+  switchTab('done');
+  setTimeout(()=>{ switchTab('report'); }, 1100);
+}
+
+document.addEventListener('keydown', e => {
+  if(view !== 'quiz') return;
+  const s = state.session; if(!s) return;
+  const q = s.qs[cur]; if(!q) return;
+  const k = e.key.toLowerCase();
+  if(q.k === 'duel'){
+    if(k==='a' || k==='1') selectDuel('a');
+    if(k==='b' || k==='2') selectDuel('b');
+    return;
+  }
+  const idx = ['1','2','3','4'].indexOf(k) !== -1 ? ['1','2','3','4'].indexOf(k) : ['a','b','c','d'].indexOf(k);
+  if(idx !== -1){ selectOption(idx); return; }
+  if(e.key === 'ArrowRight' || e.key === 'Enter') nextQuestion();
+  if(e.key === 'ArrowLeft') prevQuestion();
+});
+
+/* ═══════════════ 计分：量表题 (v-1)/3；对决题胜方 1.0 / 负方 0.5；维度分 = 均值×100 ═══════════════ */
+function calcScores(){
+  const acc = {};
+  DIMENSIONS.forEach(d => acc[d] = { s:0, n:0 });
+  state.session.qs.forEach((q, i) => {
+    const a = state.session.answers[i];
+    if(a === null || a === undefined) return;
+    if(q.k === 'duel'){
+      const winner = q[a], loser = a === 'a' ? q.b : q.a;
+      acc[winner.d].s += 1;   acc[winner.d].n++;
+      acc[loser.d].s += 0.5;  acc[loser.d].n++;
+    } else {
+      acc[q.d].s += (a-1)/3;  acc[q.d].n++;
+    }
+  });
+  const out = {};
+  DIMENSIONS.forEach(d => out[d] = Math.round(acc[d].s / Math.max(acc[d].n,1) * 100));
+  return out;
+}
+function dimLevel(s){
+  if(s >= 78) return {label:'天赋突出', cls:'lv-high'};
+  if(s >= 62) return {label:'明显优势', cls:'lv-good'};
+  if(s >= 45) return {label:'中等倾向', cls:'lv-mid'};
+  return {label:'相对克制', cls:'lv-low'};
+}
+function typeMatch(t, scores){
+  let sw=0, ss=0;
+  for(const d in t.weights){ sw += t.weights[d]; ss += t.weights[d]*(scores[d]||50); }
+  return Math.round(ss/sw);
+}
+function careerFit(c, scores){
+  let sw=0, ss=0;
+  for(const d in c.w){ sw += c.w[d]; ss += c.w[d]*(scores[d]||50); }
+  return Math.round(ss/sw);
+}
+function comboText(a,b){
+  const key = [a,b].sort().join('|');
+  if(CURATED_COMBOS[key]) return CURATED_COMBOS[key];
+  return `你的「${a}」与「${b}」相互加成：前者带来${DIM_INFO[a].verb}，后者带来${DIM_INFO[b].verb}，让你在${DIM_INFO[a].scenario}与${DIM_INFO[b].scenario}中都更容易做出成绩。`;
+}
+
+/* ═══════════════ 报告 ═══════════════ */
+function renderReport(){
+  const has = state.completed && state.session;
+  $('noReport').classList.toggle('hidden', !!has);
+  $('reportContent').classList.toggle('hidden', !has);
+  if(!has) return;
+
+  const scores = calcScores();
+  const sorted = DIMENSIONS.map(d=>({d, s:scores[d]})).sort((a,b)=>b.s-a.s);
+  const top3 = sorted.slice(0,3), bottom2 = sorted.slice(-2).reverse();
+  const avg = Math.round(sorted.reduce((a,b)=>a+b.s,0)/sorted.length);
+
+  const ranked = TYPES.map(t=>({t, m:typeMatch(t, scores)})).sort((a,b)=>b.m-a.m);
+  const main = ranked[0], second = ranked[1];
+  const dateStr = state.reportAt ? new Date(state.reportAt).toLocaleDateString('zh-CN') : '';
+
+  $('repOverview').innerHTML = `
+    <div><span class="type-badge">${main.t.emoji} ${main.t.name}</span></div>
+    <div class="match-line">维度组合匹配度 <b>${main.m}%</b>${(second.m - main.m) <= 8 ? ` · 兼具「${second.t.name}」特质（${second.m}%）` : ''}</div>
+    <div class="rep-summary">${main.t.desc}</div>
+    <div class="rep-meta">测评日期 ${dateStr} · 综合指数 ${avg}/100 · 主导维度：${top3.map(t=>t.d).join('、')}</div>`;
+
+  $('dimTable').innerHTML = sorted.map(item=>{
+    const lv = dimLevel(item.s);
+    return `<div class="dim-row">
+      <span>${item.d}</span>
+      <span class="dim-bar-wrap"><span class="dim-bar" style="width:${item.s}%;background:${lv.cls==='lv-high'?'#f59e0b':lv.cls==='lv-good'?'#10b981':lv.cls==='lv-mid'?'#3b82f6':'#94a3b8'}"></span></span>
+      <span class="dim-score">${item.s}</span>
+      <span class="lv ${lv.cls}">${lv.label}</span>
+    </div>`;
+  }).join('');
+  $('dimInsight').innerHTML = `🔍 最突出的三项：<b>${top3.map(t=>`${t.d}（${t.s}）`).join('、')}</b>；相对克制的一项：<b>${bottom2[0].d}（${bottom2[0].s}）</b>。真正稀缺的不是全能，而是把长板用到极致。`;
+
+  const cd = top3[0].d, clv = dimLevel(top3[0].s), info = DIM_INFO[cd];
+  $('coreContent').innerHTML = `
+    <div class="core-box">
+      <div class="core-head"><h4>💎 ${cd}</h4><span class="lv ${clv.cls}">${clv.label} ${top3[0].s}/100</span></div>
+      <p style="font-size:14.5px">${info.strong}</p>
+      <p style="font-size:13.5px;color:var(--ink-soft);margin-top:10px"><b>团队中的你：</b>${info.work}</p>
+      <p style="font-size:13.5px;color:var(--ink-soft);margin-top:6px"><b>使用提醒：</b>${info.weak}</p>
+      <div class="psych-line">🧠 心理学对应：${info.basis}</div>
+    </div>`;
+
+  $('comboContent').innerHTML = `
+    <p style="font-size:14.5px">${comboText(top3[0].d, top3[1].d)}</p>
+    <div class="combo-chips">
+      <span class="combo-chip">${top3[0].d} ${top3[0].s}</span><span>➕</span>
+      <span class="combo-chip">${top3[1].d} ${top3[1].s}</span>
+    </div>
+    <p style="font-size:13.5px;color:var(--ink-soft);margin-top:10px">${main.t.combo}</p>`;
+
+  const lowItem = bottom2[0];
+  $('blindContent').innerHTML = `
+    <div class="blind-item">
+      <div class="blind-head"><span>${lowItem.d}</span><span class="lv ${dimLevel(lowItem.s).cls}">${dimLevel(lowItem.s).label} ${lowItem.s}</span></div>
+      <p style="font-size:13.5px;color:var(--ink-soft)">${DIM_INFO[lowItem.d].weak}</p>
+    </div>
+    <p class="muted">「克制」不是缺点——它只是说明你的能量天然流向了别处。需要时，找互补的搭档比自己硬补更聪明。</p>`;
+
+  const fits = CAREERS.map(c=>{
+    const m = careerFit(c, scores);
+    const topDims = Object.entries(c.w).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([d])=>`${d}（${scores[d]}）`);
+    return { c, m, topDims, stars: m>=78?5 : m>=70?4 : 3 };
+  }).sort((a,b)=>b.m-a.m).slice(0,4);
+  $('careerCount').textContent = `· 按匹配度推荐 ${fits.length} 个`;
+  $('careerList').innerHTML = fits.map((f,i)=>`
+    <div class="career-item">
+      <div class="career-header">
+        <span class="career-rank">${i+1}</span>
+        <span class="career-name">${f.c.name}</span>
+        <span class="stars">${'★'.repeat(f.stars)}${'☆'.repeat(5-f.stars)}</span>
+        <span class="muted">匹配 ${f.m}%</span>
+      </div>
+      <div class="career-why">为什么是它：高度依赖你的 ${f.topDims.join(' 和 ')}</div>
+      <div class="career-detail">适合：${f.c.fit}<br><b>风险：</b>${f.c.risk}<br><i>第一步：</i>${f.c.first}</div>
+    </div>`).join('');
+  $('careerTip').innerHTML = `💡 匹配度由你的十个维度真实得分加权算出。选方向时，优先看哪些工作能让你的长板（${top3[0].d}）被看见、被需要。`;
+
+  $('planList').innerHTML = main.t.plan.map((task,i)=>`
+    <div class="plan-day">
+      <div class="day-badge">${i+1}<small>天</small></div>
+      <div class="plan-content"><p>${task}</p></div>
+    </div>`).join('') +
+    `<p class="muted" style="margin-top:6px">7 天后你会更清楚「这条路适不适合我」——验证的成本，远低于选错的代价。</p>`;
+
+  $('actionList').innerHTML = [
+    `本周做一件能发挥「${top3[0].d}」的小事，并记录过程中的感受`,
+    `在「${lowItem.d}」相关的事上，找一个互补的搭档或工具来补位`,
+    `把这份报告发给 1 位了解你的人，请 TA 印证是否吻合`
+  ].map(a=>`<li><span class="action-check"></span>${a}</li>`).join('');
+
+  $('basisContent').innerHTML = buildBasis(top3, bottom2, main);
+}
+
+function buildBasis(top3, bottom2, main){
+  const method = `<div class="basis-method">本测评共 20 题，分 5 个篇章呈现，每次从 <b>120 题题库</b>中随机抽取 16 道量表题（每题 4 档，1–4 分，归一化为 0–1），并随机加入 4 组「思维对决」——两个同样有吸引力的选项二选一，采用心理学中的<b>强迫选择范式</b>（参照盖洛普优势识别器 CliftonStrengths 的防伪装设计），选择胜方维度计 1.0、负方计 0.5。维度得分 = 该维度所有作答项的归一化均值 × 100。随机组卷的组合空间超过 10<sup>21</sup> 种，每个人的卷子几乎不可能相同。报告中所有数字均由你的作答实时算出，<b>无任何预设分数</b>。</div>`;
+  const blocks = (item)=>{
+    let h = `<div class="basis-dim"><div class="basis-dim-head"><b>${item.d}</b> · 得分 ${item.s}<span class="lv ${dimLevel(item.s).cls}">${dimLevel(item.s).label}</span></div>`;
+    h += `<div class="basis-a">🧠 测量构念：${DIM_INFO[item.d].basis}</div><div style="height:6px"></div>`;
+    state.session.qs.forEach((q,i)=>{
+      const a = state.session.answers[i];
+      if(a === null || a === undefined) return;
+      if(q.k === 'duel'){
+        if(q.a.d === item.d || q.b.d === item.d){
+          const chosen = q[a], other = a === 'a' ? q.b : q.a;
+          const win = chosen.d === item.d;
+          h += `<div class="basis-q">⚔️ ${esc(q.q)}<div class="basis-a">你的选择：「<b>${esc(chosen.t)}</b>」（本维度${win?'胜出 +1.0':'落败 +0.5'}，另一维度为「${other.d}」）</div></div>`;
+        }
+      } else if(q.d === item.d){
+        h += `<div class="basis-q">· ${esc(q.q)}<div class="basis-a">你的选择：「<b>${esc(q.o[a-1])}</b>」 <span>+${a}/4</span></div></div>`;
+      }
+    });
+    return h + `</div>`;
+  };
+  const duelList = state.session.qs.map((q,i)=>({q, a:state.session.answers[i]}))
+    .filter(x => x.q.k === 'duel' && x.a);
+  return `
+    ${method}
+    <div class="basis-dim-head" style="margin-top:14px;border:none;padding-top:0"><b>⚔️ 本次你随机抽到的 4 组思维对决</b></div>
+    ${duelList.map(x => `<div class="basis-q">· ${esc(x.q.q)}<div class="basis-a">你选了「<b>${esc(x.q[x.a].t)}</b>」，未选「${esc(x.a==='a'?x.q.b.t:x.q.a.t)}」</div></div>`).join('')}
+    <div class="basis-dim-head" style="margin-top:14px;border:none;padding-top:0"><b>🎯 类型判定</b></div>
+    <div class="basis-method">你得分最高的三个维度是 <b>${top3.map(t=>t.d+'（'+t.s+'）').join('、')}</b>，加权匹配后「<b>${main.t.name}</b>」组合得分最高（${main.m}%），据此判定你的主类型。</div>
+    <div class="basis-dim-head" style="margin-top:14px;border:none;padding-top:0"><b>🌟 高分项的真实作答</b></div>
+    ${top3.map(blocks).join('')}
+    <div class="basis-dim-head" style="margin-top:14px;border:none;padding-top:0"><b>🔍 待发展项的真实作答</b></div>
+    ${bottom2.map(blocks).join('')}`;
+}
+
+/* ═══════════════ 数据管理 ═══════════════ */
+function shareReport(){
+  if(!state.completed){ toast('请先完成测评'); return; }
+  const scores = calcScores();
+  const sorted = DIMENSIONS.map(d=>({d,s:scores[d]})).sort((a,b)=>b.s-a.s);
+  const main = TYPES.map(t=>({t,m:typeMatch(t,scores)})).sort((a,b)=>b.m-a.m)[0];
+  const text = `我用「🧭天赋罗盘」测了天赋：主类型「${main.t.emoji}${main.t.name}」（匹配度${main.m}%），Top3 天赋：${sorted.slice(0,3).map(t=>t.d).join('、')}。`;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>toast('摘要已复制，快去分享吧 📋'),()=>toast('复制失败，请手动截图分享'));
+  } else { toast('当前环境不支持复制，请截图分享'); }
+}
+function exportData(){
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '天赋罗盘备份-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('已导出备份文件 💾');
+}
+function importData(ev){
+  const file = ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const s = JSON.parse(reader.result);
+      if(!s.session || !Array.isArray(s.session.qs)) throw new Error('bad');
+      state = s; save();
+      toast('导入成功 ✅');
+      switchTab('home');
+    }catch(e){ toast('文件格式不正确，导入失败'); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+function clearData(){
+  if(confirm('确定清空所有本地数据吗？此操作不可恢复（建议先导出备份）。')){
+    localStorage.removeItem(LS_KEY);
+    state = load(); save();
+    toast('已清空本地数据 🗑️');
+    switchTab('home');
+  }
+}
+
+/* ═══════════════ 启动 ═══════════════ */
+(function init(){
+  const params = new URLSearchParams(location.search);
+  // 调试模式：自动随机作答并出报告（仅站长自测）
+  if(params.has('auto')){
+    state.session = buildSession();
+    state.session.answers = state.session.qs.map(q =>
+      q.k === 'duel' ? (Math.random() < .5 ? 'a' : 'b') : 1 + Math.floor(Math.random()*4));
+    state.session.cur = 0;
+    state.completed = true;
+    state.reportAt = new Date().toISOString();
+    save();
+  }
+  // 管理员入口：网址后加 ?admin=密码 → 本设备激活管理员模式（可重复测评）
+  const adminParam = params.get('admin');
+  if(adminParam !== null){
+    if(adminParam === CONFIG.adminPasscode){
+      state.adminMode = true; save();
+      setTimeout(()=>toast('👤 管理员模式已激活：本设备可无限次重新测评'), 600);
+    } else {
+      setTimeout(()=>toast('管理员密码不正确'), 600);
+    }
+  }
+  if(CONFIG.requireActivation && !state.activated){
+    $('gateView').classList.remove('hidden');
+  } else {
+    $('mainNav').classList.remove('hidden');
+    switchTab('home');
+  }
+})();
+</script>
+</body>
+</html>
